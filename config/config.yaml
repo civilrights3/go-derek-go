@@ -1,0 +1,8 @@
+chat:
+  guild_id: 320005902809825280
+  channel_id: 1044234994391978045
+multiworld:
+  world:
+    server: localhost
+    port: 38281
+    slot: Derek!
