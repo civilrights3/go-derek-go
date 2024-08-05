@@ -19,6 +19,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	fmt.Println("Loaded config")
 
 	sigChan := make(chan os.Signal, 1)
 	// catch SIGETRM or SIGINTERRUPT
@@ -26,31 +27,22 @@ func main() {
 
 	// init the adapter for archipelago
 	arch := multiworld.NewArchipelagoClient(cfg.Multiworld)
-	err = arch.Start(ctx, cfg.Multiworld.World.Server, cfg.Multiworld.World.Port, cfg.Multiworld.World.Slot)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer func() {
-		arch.Disconnect(ctx)
-		fmt.Println("Disconnected...")
-		cancel()
-	}()
-
-	_, err = arch.Read(ctx)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	fmt.Println("Starting multiworld connection")
+	arch.Start(ctx, cfg.Multiworld.World.Server, cfg.Multiworld.World.Port, cfg.Multiworld.World.Slot)
+	fmt.Println("Multiworld connected")
 
 	// init adapter for discord
 
 	// build core and pass adapters
 
 	fmt.Println("Started...")
-	<-sigChan
+	select {
+	case <-sigChan:
+		break
+	}
+
 	fmt.Println("Closing...")
-	//cancel()
+	cancel()
 }
 
 const (

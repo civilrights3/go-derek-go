@@ -24,7 +24,7 @@ func newDefaultChat() Chat {
 
 const (
 	defaultClientID         = "163519839402105"
-	defaultVersion          = "0.3.8"
+	defaultVersion          = "0.5.0"
 	defaultConnectionRetry  = 1800 // 30 minutes
 	defaultMultiworldServer = "archipelago.gg"
 )

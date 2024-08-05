@@ -3,14 +3,12 @@ package multiworld
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/Masterminds/semver/v3"
 	"github.com/civilrights3/go-derek-go/internal/config"
 	"net/url"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
-	"syscall"
 	"time"
 )
 
@@ -26,6 +24,7 @@ type ArchipelagoClient struct {
 	clientVersion *semver.Version
 	connection    connection
 	maxRetry      time.Duration
+	minRetry      time.Duration
 }
 
 type connection struct {
@@ -39,10 +38,11 @@ func NewArchipelagoClient(cfg config.Multiworld) *ArchipelagoClient {
 		clientID:      cfg.ClientID,
 		clientVersion: semver.MustParse(cfg.ClientVersion),
 		maxRetry:      time.Duration(cfg.MaxConnectionRetry) * time.Second,
+		minRetry:      1 * time.Second,
 	}
 }
 
-func (a *ArchipelagoClient) Start(ctx context.Context, address string, port string, slot string) error {
+func (a *ArchipelagoClient) Start(ctx context.Context, address string, port string, slot string) {
 	a.connection = connection{
 		name:     slot,
 		password: "", // TODO do i bother supporting passwords?
@@ -52,31 +52,76 @@ func (a *ArchipelagoClient) Start(ctx context.Context, address string, port stri
 		},
 	}
 
+	go a.startReadLoop(ctx)
+
+	return
+}
+
+func (a *ArchipelagoClient) startReadLoop(ctx context.Context) {
 	for {
-		if a.socket == nil {
-			err := a.Connect(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if a.socket == nil {
+				a.connect(ctx)
+			}
+			a.readLoop(ctx)
+			a.disconnect(ctx)
+		}
+	}
+}
+
+func (a *ArchipelagoClient) readLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			a.disconnect(ctx)
+			return
+		default:
+			b, err := a.readSock(ctx)
 			if err != nil {
-				return err
+				fmt.Printf("error reading socket: %s\n", err)
+				return
+			}
+
+			err = a.handleMessage(ctx, b)
+			if err != nil {
+				fmt.Printf("unable to handle message: %s\n", err)
+				return
 			}
 		}
 	}
 }
 
-func (a *ArchipelagoClient) Connect(ctx context.Context) error {
-	c, _, err := websocket.Dial(ctx, a.connection.address.String(), &websocket.DialOptions{
-		CompressionMode: websocket.CompressionDisabled,
-	})
-	if err != nil && errors.Is(err, syscall.ECONNREFUSED) {
-		fmt.Printf("%+v\n", err)
-		return err
+func (a *ArchipelagoClient) connect(ctx context.Context) {
+	currentRetry := a.minRetry
+
+	for {
+		timer := time.NewTimer(currentRetry)
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			c, _, err := websocket.Dial(ctx, a.connection.address.String(), &websocket.DialOptions{
+				CompressionMode: websocket.CompressionDisabled,
+			})
+			if err == nil {
+				a.socket = c
+				return
+			}
+
+			currentRetry = currentRetry * 2
+			if currentRetry > a.maxRetry {
+				currentRetry = a.maxRetry
+			}
+			fmt.Printf("Failed to connect %s\n", err)
+			fmt.Printf("Retry in %s seconds\n", currentRetry)
+		}
 	}
-
-	a.socket = c
-
-	return nil
 }
 
-func (a *ArchipelagoClient) Disconnect(ctx context.Context) {
+func (a *ArchipelagoClient) disconnect(ctx context.Context) {
 	sock := a.socket
 	a.socket = nil
 
@@ -86,69 +131,25 @@ func (a *ArchipelagoClient) Disconnect(ctx context.Context) {
 	}
 }
 
-func (a *ArchipelagoClient) Read(ctx context.Context) ([]byte, error) {
-	go a.startReadLoop(ctx)
-	return nil, nil
-}
-
-func (a *ArchipelagoClient) startReadLoop(ctx context.Context) {
-	dataChan := make(chan []byte)
-	go func() {
-		for {
-			_, b, err := a.socket.Read(ctx)
-			if err != nil && websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-				a.Disconnect(ctx)
-				return
-			}
-
-			select {
-			case <-ctx.Done():
-				return
-			case dataChan <- b:
-				continue
-			}
+func (a *ArchipelagoClient) readSock(ctx context.Context) (b []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("remote server suddenly closed: %v", r)
 		}
 	}()
-	for {
-		select {
-		case <-ctx.Done():
-			err := a.socket.Close(websocket.StatusNormalClosure, "")
-			if err != nil {
-				fmt.Printf("error closing websocket: %s\n", err)
-			}
-			return
-		case b := <-dataChan:
-			err := a.handleMessage(ctx, b)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-		}
-	}
-}
 
-func (a *ArchipelagoClient) send(ctx context.Context, message interface{}) error {
-	msgs := []interface{}{message}
-	fmt.Println("Sending message")
-	b, _ := json.Marshal(msgs)
-	fmt.Printf("%s\n", b)
-	err := wsjson.Write(ctx, a.socket, msgs)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Sent message")
-	return nil
+	_, b, err = a.socket.Read(ctx)
+	return
 }
 
 func (a *ArchipelagoClient) handleMessage(ctx context.Context, msg []byte) error {
-	fmt.Println("New messages, Sir!")
-	fmt.Printf("%s\n", msg)
 	msgs, err := a.parse(msg)
 	if err != nil {
 		return err
 	}
 
 	for _, m := range msgs {
+		fmt.Printf("received command %s\n", m.Type)
 		switch m.Type {
 		case CmdRoomInfo:
 			return a.handleRoomInfo(ctx, m.Payload)
@@ -158,8 +159,7 @@ func (a *ArchipelagoClient) handleMessage(ctx context.Context, msg []byte) error
 		case CmdPrintJSON:
 
 		default:
-			fmt.Printf("Thats it! I've come up with a new type! \n%s\n", m.Payload)
-			//return errors.New("STOP PLS")
+			continue
 		}
 	}
 
@@ -219,4 +219,17 @@ func (a *ArchipelagoClient) sendConnect(ctx context.Context) error {
 	}
 
 	return a.send(ctx, body)
+}
+
+func (a *ArchipelagoClient) send(ctx context.Context, message interface{}) error {
+	msgs := []interface{}{message}
+	fmt.Println("Sending message")
+	b, _ := json.Marshal(msgs)
+	fmt.Printf("%s\n", b)
+	err := wsjson.Write(ctx, a.socket, msgs)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Sent message")
+	return nil
 }
