@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/civilrights3/go-derek-go/internal/chat"
 	"github.com/civilrights3/go-derek-go/internal/config"
 	"github.com/civilrights3/go-derek-go/internal/multiworld"
+	"github.com/civilrights3/go-derek-go/internal/queue"
 	"gopkg.in/yaml.v3"
 	"os"
 	"os/signal"
@@ -25,13 +27,30 @@ func main() {
 	// catch SIGETRM or SIGINTERRUPT
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
+	// init adapter for discord
+	discordClient, err := chat.NewDiscordClient(cfg.Chat)
+	if err != nil {
+		panic(fmt.Sprintf("error creating discord connection: %s\n", err))
+	}
+
+	err = discordClient.Connect()
+	if err != nil {
+		panic(fmt.Sprintf("cannot start discord connection: %s\n", err))
+	}
+
+	// start message queue
+	queue.StartMessageQueue()
+	//queue.Queue.RegisterMessageListener(queue.Queue.TestHandler)
+	queue.Queue.RegisterMessageListener(discordClient.SendMessage)
+
 	// init the adapter for archipelago
-	arch := multiworld.NewArchipelagoClient(cfg.Multiworld)
+	arch, err := multiworld.NewArchipelagoClient(cfg.Multiworld)
+	if err != nil {
+		panic(fmt.Sprintf("cannot start multiworld connection: %s\n", err))
+	}
 	fmt.Println("Starting multiworld connection")
 	arch.Start(ctx, cfg.Multiworld.World.Server, cfg.Multiworld.World.Port, cfg.Multiworld.World.Slot)
 	fmt.Println("Multiworld connected")
-
-	// init adapter for discord
 
 	// build core and pass adapters
 
@@ -42,6 +61,11 @@ func main() {
 	}
 
 	fmt.Println("Closing...")
+	err = discordClient.Disconnect()
+	if err != nil {
+		fmt.Printf("could not disconnect from discord: %s\n", err)
+	}
+
 	cancel()
 }
 

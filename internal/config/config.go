@@ -27,6 +27,8 @@ const (
 	defaultVersion          = "0.5.0"
 	defaultConnectionRetry  = 1800 // 30 minutes
 	defaultMultiworldServer = "archipelago.gg"
+
+	defaultCacheFilepath = "./cache"
 )
 
 type Multiworld struct {
@@ -34,12 +36,17 @@ type Multiworld struct {
 	ClientVersion      string `yaml:"client_version,omitempty"`
 	MaxConnectionRetry int    `yaml:"max_connection_retry"`
 	World              World  `yaml:"world,omitempty"`
+	Cache              Cache  `yaml:"cache,omitempty"`
 }
 
 type World struct {
 	Server string `yaml:"server,omitempty"`
 	Port   string `yaml:"port,omitempty"`
 	Slot   string `yaml:"slot,omitempty"`
+}
+
+type Cache struct {
+	Filepath string
 }
 
 func newDefaultMultiworld() Multiworld {
@@ -49,6 +56,9 @@ func newDefaultMultiworld() Multiworld {
 		MaxConnectionRetry: defaultConnectionRetry,
 		World: World{
 			Server: defaultMultiworldServer,
+		},
+		Cache: Cache{
+			Filepath: defaultCacheFilepath,
 		},
 	}
 }

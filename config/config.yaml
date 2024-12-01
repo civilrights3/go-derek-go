@@ -1,6 +1,9 @@
 chat:
   guild_id: 320005902809825280
   channel_id: 1044234994391978045
+#  test values
+#  guild_id: 331869022503174174
+#  channel_id: 720268308615790594
 multiworld:
   world:
     server: localhost

@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"time"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/civilrights3/go-derek-go/internal/config"
-	"net/url"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
-	"time"
 )
 
 type MultiworldClient interface {
@@ -25,6 +26,8 @@ type ArchipelagoClient struct {
 	connection    connection
 	maxRetry      time.Duration
 	minRetry      time.Duration
+	dataCache     *dataCache
+	messageChan   chan any
 }
 
 type connection struct {
@@ -33,13 +36,21 @@ type connection struct {
 	address  url.URL
 }
 
-func NewArchipelagoClient(cfg config.Multiworld) *ArchipelagoClient {
+func NewArchipelagoClient(cfg config.Multiworld) (*ArchipelagoClient, error) {
+	cache := newDataCache(cfg.Cache.Filepath)
+	err := cache.loadCacheFromFS()
+	if err != nil {
+		// Yes this will crash the start of the application. If not it'll just have a crash loop later when saving caches
+		return nil, fmt.Errorf("error loading cache from FS: %w", err)
+	}
+
 	return &ArchipelagoClient{
 		clientID:      cfg.ClientID,
 		clientVersion: semver.MustParse(cfg.ClientVersion),
 		maxRetry:      time.Duration(cfg.MaxConnectionRetry) * time.Second,
 		minRetry:      1 * time.Second,
-	}
+		dataCache:     cache,
+	}, nil
 }
 
 func (a *ArchipelagoClient) Start(ctx context.Context, address string, port string, slot string) {
@@ -63,11 +74,17 @@ func (a *ArchipelagoClient) startReadLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+			a.messageChan = make(chan any, 10)
 			if a.socket == nil {
 				a.connect(ctx)
 			}
+
+			go a.writeLoop(ctx)
 			a.readLoop(ctx)
+
 			a.disconnect(ctx)
+			close(a.messageChan)
+			a.messageChan = nil
 		}
 	}
 }
@@ -90,6 +107,35 @@ func (a *ArchipelagoClient) readLoop(ctx context.Context) {
 				fmt.Printf("unable to handle message: %s\n", err)
 				return
 			}
+		}
+	}
+}
+
+func (a *ArchipelagoClient) writeLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-a.messageChan:
+			if a.socket == nil {
+				return
+			}
+
+			fmt.Println("Sending message")
+			msgs := []interface{}{msg}
+			b, err := json.Marshal(msgs)
+			if err != nil {
+				fmt.Printf("error marshalling message: %s\n", err)
+			}
+			fmt.Printf("%s\n", b)
+
+			err = wsjson.Write(ctx, a.socket, msgs)
+			if err != nil {
+				fmt.Printf("error occured when sending message to server: %s\n", err)
+				// TODO how do we retry sends? should we?
+				return
+			}
+			fmt.Println("Sent message")
 		}
 	}
 }
@@ -143,6 +189,7 @@ func (a *ArchipelagoClient) readSock(ctx context.Context) (b []byte, err error) 
 }
 
 func (a *ArchipelagoClient) handleMessage(ctx context.Context, msg []byte) error {
+	fmt.Printf("%s\n", msg)
 	msgs, err := a.parse(msg)
 	if err != nil {
 		return err
@@ -153,12 +200,20 @@ func (a *ArchipelagoClient) handleMessage(ctx context.Context, msg []byte) error
 		switch m.Type {
 		case CmdRoomInfo:
 			return a.handleRoomInfo(ctx, m.Payload)
+		case CmdDataPackage:
+			return a.handleDataPackage(ctx, m.Payload)
 		case CmdConnected:
+			return a.handleConnected(ctx, m.Payload)
 		case CmdConnectionRefused:
+			return a.handleConnectionRefused(ctx, m.Payload)
 		case CmdRoomUpdate:
+			return a.handleRoomUpdate(ctx, m.Payload)
 		case CmdPrintJSON:
-
+			return a.handlePrintJSON(ctx, m.Payload)
+		case CmdInvalidPacket:
+			return a.handleInvalidPacket(ctx, m.Payload)
 		default:
+			fmt.Printf("unknown command: %s\n", m.Type)
 			continue
 		}
 	}
@@ -188,48 +243,16 @@ func (a *ArchipelagoClient) parse(msg []byte) ([]RawMsg, error) {
 	return parsed, nil
 }
 
-func (a *ArchipelagoClient) handleRoomInfo(ctx context.Context, b []byte) error {
-	out := &RoomInfoMessage{}
-	err := json.Unmarshal(b, &out)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	fmt.Printf("%+v\n", out)
-
-	// TODO determine data package updates needed
-
-	// send slot info
-	return a.sendConnect(ctx) // TODO should sends be in a separate worker? is that overkill?
-}
-
-func (a *ArchipelagoClient) sendConnect(ctx context.Context) error {
-	body := ConnectPacket{
-		Cmd:  CmdConnect.String(),
-		Name: a.connection.name,
-		Version: Version{
-			Major: a.clientVersion.Major(),
-			Minor: a.clientVersion.Minor(),
-			Build: a.clientVersion.Patch(),
-			Class: "Version",
-		},
-		Uuid:          a.clientID,
-		ItemsHandling: 0b011,
-		Tags:          []string{"TextOnly", "IgnoreGame", "AP", "Derek"},
-	}
-
-	return a.send(ctx, body)
-}
-
-func (a *ArchipelagoClient) send(ctx context.Context, message interface{}) error {
-	msgs := []interface{}{message}
-	fmt.Println("Sending message")
-	b, _ := json.Marshal(msgs)
-	fmt.Printf("%s\n", b)
-	err := wsjson.Write(ctx, a.socket, msgs)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Sent message")
-	return nil
-}
+// keeping just in case we need to debug the send loop later
+//func (a *ArchipelagoClient) send(ctx context.Context, message interface{}) error {
+//	msgs := []interface{}{message}
+//	fmt.Println("Sending message")
+//	b, _ := json.Marshal(msgs)
+//	fmt.Printf("%s\n", b)
+//	err := wsjson.Write(ctx, a.socket, msgs)
+//	if err != nil {
+//		return err
+//	}
+//	fmt.Println("Sent message")
+//	return nil
+//}

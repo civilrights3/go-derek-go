@@ -1,0 +1,9 @@
+Run with:
+
+go run ./...
+
+Run server with
+
+cd C:\ProgramData\Archipelago
+
+.\ArchipelagoServer.exe output\AP_27356636235385397698.zip
