@@ -116,8 +116,8 @@ func (a *ArchipelagoClient) writeLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-a.messageChan:
-			if a.socket == nil {
+		case msg, open := <-a.messageChan:
+			if !open || a.socket == nil {
 				return
 			}
 
