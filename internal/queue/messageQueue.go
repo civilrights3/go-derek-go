@@ -2,7 +2,6 @@ package queue
 
 import (
 	"fmt"
-	"github.com/civilrights3/go-derek-go/internal/multiworld"
 	"sync"
 	"time"
 )
@@ -73,12 +72,21 @@ func (m *messageQueue) AckNext() {
 	m.queue = m.queue[1:]
 }
 
+type ItemImportanceFlag int
+
+const (
+	ItemNormal      ItemImportanceFlag = 0
+	ItemProgression ItemImportanceFlag = 0b001
+	ItemHelpful     ItemImportanceFlag = 0b010
+	ItemTrap        ItemImportanceFlag = 0b100
+)
+
 type BroadcastMessage struct {
 	Sender     string
 	Receiver   string
 	Item       string
 	Location   string
-	Importance multiworld.ItemImportanceFlag
+	Importance ItemImportanceFlag
 }
 
 func (m *messageQueue) TestHandler(message BroadcastMessage) error {

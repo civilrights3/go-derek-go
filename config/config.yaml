@@ -1,11 +1,15 @@
 chat:
+  display_mode: color
   guild_id: 320005902809825280
   channel_id: 1044234994391978045
 #  test values
-#  guild_id: 331869022503174174
-#  channel_id: 720268308615790594
+  # guild_id: 331869022503174174
+  # channel_id: 720268308615790594
 multiworld:
   world:
-    server: localhost
-    port: 38281
     slot: Derek!
+    server: archipelago.gg
+    port: 35503
+#    test values
+#    server: localhost
+#    port: 38281

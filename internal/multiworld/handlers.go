@@ -104,9 +104,9 @@ func (a *ArchipelagoClient) handlePrintJSON(ctx context.Context, b []byte) error
 
 	if out.Type == JSONDataTypeItemSend {
 		transformed := queue.BroadcastMessage{
-			Sender:     a.dataCache.GetPlayerNameForSlotStr(out.Data[0].Text),
-			Receiver:   a.dataCache.GetPlayerNameForSlot(out.Item.Player),
-			Item:       a.dataCache.GetItemNameForIDForPlayer(out.Item.Item, out.Item.Player),
+			Sender:     a.dataCache.GetPlayerNameForSlot(out.Item.Player),
+			Receiver:   a.dataCache.GetPlayerNameForSlot(out.Receiving),
+			Item:       a.dataCache.GetItemNameForIDForPlayer(out.Item.Item, out.Receiving),
 			Location:   a.dataCache.GetLocationNameForIDForPlayer(out.Item.Location, out.Item.Player),
 			Importance: out.Item.Flags,
 		}

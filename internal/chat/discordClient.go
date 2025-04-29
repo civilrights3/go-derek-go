@@ -8,15 +8,25 @@ import (
 )
 
 type DiscordClient struct {
-	discord   *discordgo.Session
-	channelID string
-	guildID   string
+	discord          *discordgo.Session
+	channelID        string
+	guildID          string
+	messageFormatter textHandler
 }
+
+var (
+	formattingFuncs = map[config.DisplayMode]textHandler{
+		config.DisplayPlain:      formatPlainMessage,
+		config.DisplayMonospaced: formatMonospacedMessage,
+		config.DisplayColor:      formatColorMessage,
+	}
+)
 
 func NewDiscordClient(cfg config.Chat) (*DiscordClient, error) {
 	c := &DiscordClient{
-		channelID: cfg.ChannelID,
-		guildID:   cfg.GuildID,
+		channelID:        cfg.ChannelID,
+		guildID:          cfg.GuildID,
+		messageFormatter: formattingFuncs[cfg.DisplayMode],
 	}
 
 	discord, err := discordgo.New(fmt.Sprintf("Bot %s", cfg.Key))
@@ -49,21 +59,13 @@ func (d *DiscordClient) HandleOnReady(s *discordgo.Session, m *discordgo.Ready) 
 }
 
 func (d *DiscordClient) SendMessage(msg queue.BroadcastMessage) error {
+	selfFind := msg.Sender == msg.Receiver
+
 	// TODO how do i do @?
-	_, err := d.discord.ChannelMessageSend(d.channelID, formatMessage(msg))
+	_, err := d.discord.ChannelMessageSend(d.channelID, d.messageFormatter(msg, selfFind))
 	if err != nil {
 		return fmt.Errorf("unable to send message: %w", err)
 	}
 
 	return nil
-}
-
-func formatMessage(msg queue.BroadcastMessage) string {
-	selfFind := msg.Sender == msg.Receiver
-
-	if selfFind {
-		return fmt.Sprintf("[%s] found their <%s> (%s)", msg.Receiver, msg.Item, msg.Location)
-	}
-
-	return fmt.Sprintf("[%s] sent <%s> to {%s} (%s)", msg.Sender, msg.Item, msg.Receiver, msg.Location)
 }

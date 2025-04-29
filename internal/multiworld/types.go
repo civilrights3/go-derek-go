@@ -1,5 +1,7 @@
 package multiworld
 
+import "github.com/civilrights3/go-derek-go/internal/queue"
+
 type RawMsg struct {
 	Type    ServerMessageType
 	Payload []byte
@@ -115,10 +117,11 @@ type SlotInfo struct {
 const JSONDataTypeItemSend = "ItemSend"
 
 type PrintJSONMessage struct {
-	Cmd  string            `json:"cmd"`
-	Data []JSONDataElement `json:"data"`
-	Type string            `json:"type"`
-	Item JSONItem          `json:"item"`
+	Cmd       string            `json:"cmd"`
+	Data      []JSONDataElement `json:"data"`
+	Type      string            `json:"type"`
+	Item      JSONItem          `json:"item"`
+	Receiving int               `json:"receiving"`
 }
 
 type JsonDataItemType string
@@ -137,21 +140,12 @@ type JSONDataElement struct {
 }
 
 type JSONItem struct {
-	Item     int                `json:"item"`
-	Location int                `json:"location"`
-	Player   int                `json:"Player"`
-	Flags    ItemImportanceFlag `json:"flags"`
-	Class    string             `json:"class"`
+	Item     int                      `json:"item"`
+	Location int                      `json:"location"`
+	Player   int                      `json:"Player"`
+	Flags    queue.ItemImportanceFlag `json:"flags"`
+	Class    string                   `json:"class"`
 }
-
-type ItemImportanceFlag int
-
-const (
-	ItemNormal      ItemImportanceFlag = 0
-	ItemProgression ItemImportanceFlag = 0b001
-	ItemHelpful     ItemImportanceFlag = 0b010
-	ItemTrap        ItemImportanceFlag = 0b100
-)
 
 type Game struct {
 	LocationNameToId map[string]int `json:"location_name_to_id"`

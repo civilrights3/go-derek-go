@@ -1,0 +1,11 @@
+chat:
+  display_mode: color
+  # test values
+  guild_id: 331869022503174174
+  channel_id: 720268308615790594
+multiworld:
+  world:
+    slot: Derek!
+    # test values
+    server: localhost
+    port: 38281

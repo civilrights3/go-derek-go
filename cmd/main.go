@@ -2,17 +2,22 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"github.com/civilrights3/go-derek-go/internal/chat"
-	"github.com/civilrights3/go-derek-go/internal/config"
-	"github.com/civilrights3/go-derek-go/internal/multiworld"
-	"github.com/civilrights3/go-derek-go/internal/queue"
-	"gopkg.in/yaml.v3"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/civilrights3/go-derek-go/internal/chat"
+	"github.com/civilrights3/go-derek-go/internal/config"
+	"github.com/civilrights3/go-derek-go/internal/multiworld"
+	"github.com/civilrights3/go-derek-go/internal/queue"
+	"github.com/civilrights3/go-derek-go/test/mock"
+	"gopkg.in/yaml.v3"
 )
+
+var mockArchi = flag.Bool("mockarchi", false, "use mock archipelago messages")
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -44,13 +49,19 @@ func main() {
 	queue.Queue.RegisterMessageListener(discordClient.SendMessage)
 
 	// init the adapter for archipelago
-	arch, err := multiworld.NewArchipelagoClient(cfg.Multiworld)
-	if err != nil {
-		panic(fmt.Sprintf("cannot start multiworld connection: %s\n", err))
+	if *mockArchi {
+		fmt.Println("Sending mocked messages")
+		mock.SendTestMessages(ctx)
+		fmt.Println("Sent mocked messages")
+	} else {
+		arch, err := multiworld.NewArchipelagoClient(cfg.Multiworld)
+		if err != nil {
+			panic(fmt.Sprintf("cannot start multiworld connection: %s\n", err))
+		}
+		fmt.Println("Starting multiworld connection")
+		arch.Start(ctx, cfg.Multiworld.World.Server, cfg.Multiworld.World.Port, cfg.Multiworld.World.Slot)
+		fmt.Println("Multiworld connected")
 	}
-	fmt.Println("Starting multiworld connection")
-	arch.Start(ctx, cfg.Multiworld.World.Server, cfg.Multiworld.World.Port, cfg.Multiworld.World.Slot)
-	fmt.Println("Multiworld connected")
 
 	// build core and pass adapters
 

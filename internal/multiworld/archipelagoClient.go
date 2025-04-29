@@ -9,8 +9,8 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/civilrights3/go-derek-go/internal/config"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 type MultiworldClient interface {
@@ -58,7 +58,7 @@ func (a *ArchipelagoClient) Start(ctx context.Context, address string, port stri
 		name:     slot,
 		password: "", // TODO do i bother supporting passwords?
 		address: url.URL{
-			Scheme: "ws",
+			Scheme: "wss", // TODO make this smart enough to determine based on URL
 			Host:   fmt.Sprintf("%s:%s", address, port),
 		},
 	}
@@ -149,10 +149,13 @@ func (a *ArchipelagoClient) connect(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+			fmt.Println(a.connection.address.String())
 			c, _, err := websocket.Dial(ctx, a.connection.address.String(), &websocket.DialOptions{
 				CompressionMode: websocket.CompressionDisabled,
 			})
 			if err == nil {
+				c.SetReadLimit(-1)
+
 				a.socket = c
 				return
 			}
